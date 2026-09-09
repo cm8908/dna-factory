@@ -79,11 +79,11 @@ class TrainingMonitorApp(App):
         super().__init__()
         self.reader = MonitorReader(db_path)
         self.refresh_seconds = max(0.25, refresh_seconds)
-        self.run = self.reader.latest_run()
-        if not self.run:
+        self.run_state = self.reader.latest_run()
+        if not self.run_state:
             self.reader.close()
             raise RuntimeError(f"No training run found in {db_path}")
-        self.run_id = self.run["run_id"]
+        self.run_id = self.run_state["run_id"]
         self.known_metrics = self.reader.metric_names(self.run_id)
 
     def compose(self) -> ComposeResult:
@@ -134,7 +134,7 @@ class TrainingMonitorApp(App):
 
     def refresh_data(self) -> None:
         try:
-            self.run = self.reader.latest_run()
+            self.run_state = self.reader.latest_run()
             self._update_summary()
             self._update_metrics()
             self._update_gpu()
@@ -146,42 +146,44 @@ class TrainingMonitorApp(App):
             )
 
     def _update_summary(self) -> None:
-        step = int(self.run.get("global_step") or 0)
-        max_steps = int(self.run.get("max_steps") or 0)
-        status = str(self.run.get("status", "unknown")).upper()
+        step = int(self.run_state.get("global_step") or 0)
+        max_steps = int(self.run_state.get("max_steps") or 0)
+        status = str(self.run_state.get("status", "unknown")).upper()
         stale = (
-            self.run.get("status") == "running"
-            and time.time() - self.run["updated_at"] > 15
+            self.run_state.get("status") == "running"
+            and time.time() - self.run_state["updated_at"] > 15
         )
         if stale:
             status = "STALE"
-        elapsed = (self.run.get("ended_at") or time.time()) - self.run["started_at"]
-        step_seconds = self.run.get("step_seconds_ewma")
+        elapsed = (self.run_state.get("ended_at") or time.time()) - self.run_state[
+            "started_at"
+        ]
+        step_seconds = self.run_state.get("step_seconds_ewma")
         eta = (
             step_seconds * max(0, max_steps - step)
             if step_seconds and max_steps
             else None
         )
-        epoch = self.run.get("epoch")
+        epoch = self.run_state.get("epoch")
         line = (
-            f"[bold cyan]{self.run['trainer_type']}[/]  [bold]{status}[/]  "
+            f"[bold cyan]{self.run_state['trainer_type']}[/]  [bold]{status}[/]  "
             f"step [bold]{step:,}[/] / {max_steps:,}  epoch {_number(epoch)}  "
             f"elapsed {_duration(elapsed)}  ETA {_duration(eta)}  "
-            f"dropped {self.run.get('dropped_events', 0)}"
+            f"dropped {self.run_state.get('dropped_events', 0)}"
         )
         self.query_one("#status-line", Static).update(line)
         progress = self.query_one("#progress", ProgressBar)
         progress.update(total=max(max_steps, 1), progress=min(step, max(max_steps, 1)))
         details = (
             f"[bold]Run[/]\n"
-            f"model: {self.run.get('model_name') or '-'}\n"
-            f"host: {self.run.get('hostname')}  pid: {self.run.get('pid')}\n"
-            f"output: {self.run.get('output_dir')}\n"
-            f"best metric: {_number(self.run.get('best_metric'))}\n"
-            f"best checkpoint: {self.run.get('best_checkpoint') or '-'}"
+            f"model: {self.run_state.get('model_name') or '-'}\n"
+            f"host: {self.run_state.get('hostname')}  pid: {self.run_state.get('pid')}\n"
+            f"output: {self.run_state.get('output_dir')}\n"
+            f"best metric: {_number(self.run_state.get('best_metric'))}\n"
+            f"best checkpoint: {self.run_state.get('best_checkpoint') or '-'}"
         )
-        if self.run.get("error"):
-            details += f"\n[red]error: {self.run['error']}[/]"
+        if self.run_state.get("error"):
+            details += f"\n[red]error: {self.run_state['error']}[/]"
         self.query_one("#run-details", Static).update(details)
 
     def _sync_metric_options(self, names: list[str]) -> None:

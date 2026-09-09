@@ -7,11 +7,12 @@ import time
 
 from textual.widgets import DataTable, ProgressBar, SelectionList, TabbedContent
 
+import monitor as monitor_cli
 from dna_factory.monitoring.storage import MonitoringStore, monitor_db_path
 from dna_factory.tui.app import TrainingMonitorApp
 
 
-def test_tui_loads_progress_metrics_and_gpu(tmp_path):
+def test_tui_loads_progress_metrics_and_gpu(tmp_path, monkeypatch):
     db_path = monitor_db_path(tmp_path)
     store = MonitoringStore(db_path)
     now = time.time()
@@ -73,6 +74,7 @@ def test_tui_loads_progress_metrics_and_gpu(tmp_path):
 
     async def run_test():
         app = TrainingMonitorApp(db_path, refresh_seconds=60)
+        assert callable(app.run)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             assert app.query_one("#progress", ProgressBar).progress == 25
@@ -88,3 +90,13 @@ def test_tui_loads_progress_metrics_and_gpu(tmp_path):
             assert len(app.query_one("#metric-picker", SelectionList).selected) == 1
 
     asyncio.run(run_test())
+
+    launched = []
+
+    def fake_run(app):
+        launched.append(app.run_id)
+        app.reader.close()
+
+    monkeypatch.setattr(TrainingMonitorApp, "run", fake_run)
+    assert monitor_cli.main([str(tmp_path)]) == 0
+    assert launched == ["ui-run"]
