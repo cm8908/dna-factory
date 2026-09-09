@@ -27,6 +27,7 @@ from dna_factory.dnotitia_trainer_commons import (
     save_training_results,
     setup_logging,
 )
+from dna_factory.monitoring.callback import TrainingMonitorCallback
 from dna_factory.periodic_checkpoint import (
     PeriodicCheckpointCallback,
     parse_duration_to_seconds,
@@ -172,6 +173,20 @@ def run_training(spec, script_args, training_args, model_args, dataset_mixture_a
     except ValueError as e:
         raise ValueError(f"Invalid `periodic_save_seconds` value: {e}") from e
     callbacks = []
+    monitor_callback = None
+    if dnotitia_args.monitor_enabled:
+        monitor_callback = TrainingMonitorCallback(
+            output_dir=training_args.output_dir,
+            trainer_type=spec.trainer_type,
+            model_name=model_args.model_name_or_path,
+            gpu_interval_seconds=dnotitia_args.monitor_gpu_interval_seconds,
+            queue_size=dnotitia_args.monitor_queue_size,
+        )
+        callbacks.append(monitor_callback)
+        train_logger.info(
+            "Live training monitor enabled. Attach with: python monitor.py %s",
+            training_args.output_dir,
+        )
     if periodic_seconds > 0:
         train_logger.info(
             f"Enabling wall-clock checkpointing every {periodic_seconds:g}s "
@@ -211,7 +226,21 @@ def run_training(spec, script_args, training_args, model_args, dataset_mixture_a
         checkpoint = last_checkpoint
 
     # Train the model
-    train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    try:
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    except KeyboardInterrupt:
+        if monitor_callback is not None:
+            monitor_callback.close("interrupted", "Training interrupted by user")
+        raise
+    except BaseException as exc:
+        if monitor_callback is not None:
+            monitor_callback.close("failed", str(exc))
+        raise
+    else:
+        if monitor_callback is not None:
+            # Normally on_train_end already closes it; close() is idempotent and also
+            # covers custom trainers that omit that callback event.
+            monitor_callback.close("completed")
 
     # Save training results
     save_training_results(trainer, train_result, dataset, script_args, training_args)

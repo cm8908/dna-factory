@@ -38,3 +38,25 @@ class DnotitiaArguments:
             "checkpoint source."
         )}
     )
+    monitor_enabled: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Record live training metrics, progress, checkpoints, and local NVIDIA GPU "
+                "telemetry under output_dir/.dna-monitor for the interactive monitor TUI."
+            )
+        },
+    )
+    monitor_gpu_interval_seconds: float = field(
+        default=1.0,
+        metadata={"help": "Seconds between NVIDIA GPU telemetry samples."},
+    )
+    monitor_queue_size: int = field(
+        default=10000,
+        metadata={
+            "help": (
+                "Maximum number of pending monitor events. Full queues drop telemetry rather "
+                "than slowing training."
+            )
+        },
+    )

@@ -8,6 +8,7 @@
 1. **Auto-Generated Output Directory**: Automatically generates output directory names based on the model name and user-specified CLI arguments (e.g., `Qwen3-0.6B-SFT-num_train_epochs-2-learning_rate-1e-4`), making it easy to organize and track different training runs.
 1. **Comprehensive Default Configuration**: Provides detailed default YAML configuration with extensive comments that users can easily override with their own config files or CLI arguments.
 1. **Pre-configured Multi-GPU Training Options**: Includes ready-to-use configurations for DDP, DeepSpeed ZeRO Stage 1/3, and CPU offloading to support various training scenarios.
+1. **Live Training Monitor**: Attach an interactive terminal UI to inspect progress, metrics, curves, checkpoints, and NVIDIA GPU utilization without interrupting training.
 
 <img width="80%" src="https://github.com/user-attachments/assets/f58514c2-004f-46cd-9545-0a9b69e85ecd" />
 
@@ -63,6 +64,19 @@ $ python sft.py \
 ```
 
 Choose whichever approach works best for you!
+
+## Live Training Monitor
+
+Training runs record live monitor data by default. Open another terminal and attach
+to a run by its output directory:
+
+```bash
+$ python monitor.py outputs/your-run
+```
+
+Run `python monitor.py` without a path to open the most recently updated run under
+`outputs/`. See [docs/training-monitor.md](docs/training-monitor.md) for controls and
+configuration.
 
 ## Multi GPUs
 
