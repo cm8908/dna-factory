@@ -31,7 +31,7 @@ log_level: info
 beta: 0.0  # 0.0 = no reference model created (memory win); > 0 enables the KL penalty
 loss_type: grpo  # grpo, dapo, dr_grpo, bnpo, cispo, sapo, luspo, vespo
 num_generations: 8  # Completions per prompt; must divide the generation batch size
-max_completion_length: 16384  # Too small truncates every completion -> reward 0 -> no gradient
+max_completion_length: 8192  # Too small truncates every completion -> reward 0 -> no gradient
 mask_truncated_completions: true  # A completion cut off at the length cap never finished an answer, so keep it out of the loss
 temperature: 1.0
 epsilon: 0.2
@@ -134,6 +134,6 @@ eval_tasks:                # registry names, or local task files (resolved again
   - evals/kmmlu_redux.py
   - inspect_evals/math
 eval_devices: "0,1"        # CUDA_VISIBLE_DEVICES for the eval vLLM server; must match --data-parallel-size below
-eval_vllm_args: "--max-model-len 32768 --data-parallel-size 2"  # extra `vllm serve` flags
+eval_vllm_args: "--max-model-len 12480 --data-parallel-size 2"  # extra `vllm serve` flags
 eval_max_connections: 40   # inspect eval --max-connections
-eval_max_tokens: 16000     # inspect eval --max-tokens
+eval_max_tokens: 8192      # inspect eval --max-tokens
