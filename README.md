@@ -15,12 +15,14 @@ and **On-Policy Distillation** where a frozen teacher grades the student's own t
 - [Key Features](#key-features)
 - [How to Run](#how-to-run)
   - [Advanced Usage](#advanced-usage)
+  - [unsloth](#unsloth-single-gpu)
   - [Multi-GPUs](#multi-gpus)
   - [Multi-Nodes](#multi-nodes)
 - [Acknowledgments](#acknowledgments)
 
 # News
 
+- Oct/12/2026 - Optional **unsloth** backend (single GPU) for SFT, DPO, GRPO and distillation.
 - Sep/22/2026 - **Checkpoint Evaluation** — Inspect benchmarks on every checkpoint, logged to W&B.
 - Sep/02/2026 - **On-Policy Distillation** support.
 - Jun/05/2026 - **GRPO (Group Relative Policy Optimization)** support.
@@ -88,6 +90,21 @@ $ python sft.py \
   --config configs/SFT/qwen3-0.6B-sft.yaml \
   --num_train_epochs 2
 ```
+
+## unsloth (single GPU)
+
+`use_unsloth: true` loads the model through [unsloth](https://github.com/unslothai/unsloth)'s `FastModel` and its patched TRL trainers, for all four scripts. It is an optional extra and single-GPU only (no DeepSpeed, no AsyncGRPO). Hyperparameters, the prepared data and the saved checkpoints stay the same as without it. Supported `model_type`s are `qwen3`, `qwen3_moe`, `qwen3_5` and `qwen3_5_moe`; other models fall back to the standard path with a warning:
+
+```bash
+$ uv sync --extra unsloth
+$ python sft.py --config configs/SFT/qwen3-0.6B-sft-unsloth.yaml
+$ python grpo.py --config configs/GRPO/qwen3-0.6B-grpo-unsloth.yaml
+
+# Any script, any config
+$ python dpo.py --use_unsloth true --use_peft true --lora_dropout 0.0
+```
+
+Full guide, including when it helps and what it changes: [docs/unsloth.md](docs/unsloth.md).
 
 ## Multi-GPUs
 
