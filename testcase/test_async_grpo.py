@@ -196,6 +196,7 @@ def test_reject_distributed(monkeypatch, env, value):
     [
         ("dna", "dynamic_sampling", "resample", "dynamic_sampling"),
         ("dna", "debug_first_n_batches", 1, "debug_first_n_batches"),
+        ("dna", "use_unsloth", True, "use_unsloth"),
         ("model", "use_peft", True, "full finetuning"),
         ("model", "load_in_4bit", True, "full finetuning"),
         ("model", "attn_implementation", "sdpa", "padding-free"),
