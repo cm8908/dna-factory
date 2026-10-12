@@ -96,10 +96,11 @@ class DnotitiaDPOTrainer(DPOTrainer):
         # directly. Data-parallel wrappers hide that attribute, so use TRL's
         # regular DPO implementation for wrapped models. It executes through
         # the wrapper's forward pass and therefore preserves parallel training.
-        # Liger remains enabled for unwrapped models.
-        use_liger_with_data_parallel = self.use_liger_kernel and isinstance(
-            model, (nn.DataParallel, nn.parallel.DistributedDataParallel)
-        )
+        # Liger remains enabled for unwrapped models. TRL 1.15 dropped the trainer's
+        # `use_liger_kernel` attribute (its Liger DPO path is gone), so read it defensively.
+        use_liger_with_data_parallel = getattr(
+            self, "use_liger_kernel", False
+        ) and isinstance(model, (nn.DataParallel, nn.parallel.DistributedDataParallel))
         if use_liger_with_data_parallel:
             if not getattr(self, "_warned_liger_data_parallel_fallback", False):
                 logger.warning(
