@@ -30,13 +30,18 @@ def model_args():
 
 @pytest.fixture
 def sft_args(tmp_path):
-    return trl.SFTConfig(output_dir=str(tmp_path), gradient_checkpointing=True, seed=7)
+    return trl.SFTConfig(
+        output_dir=str(tmp_path), gradient_checkpointing=True, seed=7, bf16=False
+    )
 
 
 @pytest.fixture
 def grpo_args(tmp_path):
     return trl.GRPOConfig(
-        output_dir=str(tmp_path), use_vllm=True, vllm_gpu_memory_utilization=0.4
+        output_dir=str(tmp_path),
+        use_vllm=True,
+        vllm_gpu_memory_utilization=0.4,
+        bf16=False,
     )
 
 
@@ -123,7 +128,9 @@ class TestBuildFromPretrainedKwargs:
         assert "fast_inference" not in kwargs
 
     def test_gradient_checkpointing_off(self, model_args, tmp_path):
-        args = trl.SFTConfig(output_dir=str(tmp_path), gradient_checkpointing=False)
+        args = trl.SFTConfig(
+            output_dir=str(tmp_path), gradient_checkpointing=False, bf16=False
+        )
         kwargs = ui.build_from_pretrained_kwargs(model_args, args, max_seq_length=2048)
         assert kwargs["use_gradient_checkpointing"] is False
 
@@ -440,6 +447,7 @@ class TestRevertUnslothConfigOverrides:
         config = {
             "loss_type": "dapo",
             "gradient_checkpointing": True,
+            "bf16": False,  # CI runners have no GPU
             # keys that belong to other dataclasses of the real parser: must land in remaining strings
             "model_name_or_path": "dummy/model",
             "use_unsloth": True,
@@ -463,6 +471,7 @@ class TestRevertUnslothConfigOverrides:
             output_dir=str(tmp_path / "out"),
             loss_type="dapo",
             gradient_checkpointing=True,
+            bf16=False,
         )
         assert training_args.epsilon_high == 0.28
 
@@ -481,12 +490,13 @@ class TestRevertUnslothConfigOverrides:
             output_dir=str(tmp_path / "out"),
             loss_type="dapo",
             gradient_checkpointing=True,
+            bf16=False,
         )
         restored = ui.revert_unsloth_config_overrides(training_args, full_args)
         assert set(restored) == {"epsilon_high", "top_k"}
 
     def test_noop_for_unpatched_config(self, tmp_path):
-        training_args = trl.GRPOConfig(output_dir=str(tmp_path))
+        training_args = trl.GRPOConfig(output_dir=str(tmp_path), bf16=False)
         assert (
             ui.revert_unsloth_config_overrides(
                 training_args, ["--output_dir", str(tmp_path)]
@@ -659,7 +669,7 @@ class TestScriptHooks:
         model_args.use_peft = True
         ctx = {"use_unsloth": True, "unsloth_model_type": "qwen3"}
         out = dpo.load_models(
-            None, trl.DPOConfig(output_dir="x"), model_args, None, ctx, None
+            None, trl.DPOConfig(output_dir="x", bf16=False), model_args, None, ctx, None
         )
         assert out == {"model": "unsloth-model", "ref_model": None}
 
