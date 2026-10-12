@@ -26,8 +26,22 @@ dependencies = [
     "wandb==0.30.0",
 ]
 
+[project.optional-dependencies]
+# Opt-in unsloth backend (`use_unsloth: true`); install with `uv sync --extra unsloth`. See docs/unsloth.md.
+unsloth = [
+    "unsloth==2026.10.3",
+    "unsloth-zoo==2026.10.3",
+]
+
 [tool.uv]
 package = false
+# unsloth caps datasets, transformers and trl below the core pins; keep the core pins so the
+# extra resolves alongside them (validated on GPU). Keep in sync with the core pins above.
+override-dependencies = [
+    "datasets==5.1.0",
+    "transformers==5.19.0",
+    "trl==1.15.0",
+]
 
 [tool.ruff]
 # Pin the target version rather than inferring it from requires-python.
