@@ -36,7 +36,8 @@ unsloth = [
 [tool.uv]
 package = false
 # unsloth caps datasets, transformers and trl below the core pins; keep the core pins so the
-# extra resolves alongside them (validated on GPU). Keep in sync with the core pins above.
+# extra resolves alongside them (validated on GPU). Keep in sync with the core pins above
+# (testcase/test_dependency_pins.py checks this).
 override-dependencies = [
     "datasets==5.1.0",
     "transformers==5.19.0",
