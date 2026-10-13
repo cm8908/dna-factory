@@ -68,9 +68,15 @@ policy with its fresh adapter disabled (the same weights), which is most of the 
 Steady-state step time (first three steps excluded), peak allocated memory, single runs; `lora_r: 16` on all
 linear layers (`lora_r: 8` for the MoE), `lora_dropout: 0.0`, gradient checkpointing on.
 
+Why GRPO and distillation are slower (per-phase timing of the same two workloads; both sides generated the same
+number of tokens): unsloth's vLLM engine shares the weights with the trained model and decodes with the LoRA
+adapter applied, while the standard path merges the adapter into the weights before every generation. Decoding
+runs 32% (GRPO) and 42% (distillation) fewer tokens/s, and that is all of distillation's slowdown. On GRPO it is
+half of it (+1.4 s/step); the other half is the training phase, whose backward pass takes 1.5 s instead of 0.4 s.
+
 So: turn it on for **LoRA / QLoRA fine-tuning** (SFT, DPO) and **MoE LoRA**, and when **memory** is what limits
-you. Full fine-tuning gains nothing. For **GRPO and distillation** it saves memory but generates more slowly,
-so leave it off when throughput matters.
+you. Full fine-tuning gains nothing. For **GRPO and distillation** it saves memory but runs slower, so leave it
+off when throughput matters.
 
 ## What it changes, and what it keeps
 
