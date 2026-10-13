@@ -113,7 +113,9 @@ kernels and Liger would patch the model a second time.
 **SFT data.** unsloth's SFT trainer prepares datasets itself but does not support conversational `messages`
 datasets. The integration tokenizes them first, exactly as TRL does, using the same chat template and assistant
 masks. On `trl-lib/Capybara`, this was checked token for token: the sequences, tokens, and trained tokens match the
-standard path. Two differences remain:
+standard path. Rows that are not packed are truncated to `max_length` exactly as TRL does (`truncation_mode`, then
+rows left with no trained token are dropped), including Qwen3.5-architecture models, which unsloth never packs.
+Packed rows are chunked to `max_length` by packing itself. Two differences remain:
 
 - Packing groups sequences slightly differently. unsloth packs the whole dataset rather than each
   `dataset_num_proc` shard: Capybara has 0.25% fewer packed rows, with the same number of trained tokens.

@@ -723,6 +723,210 @@ class TestTokenizeConversationalDataset:
         assert out is dataset
 
 
+class TestTruncateLikeTrl:
+    """Test cases for truncate_like_trl (TRL's max_length truncation for pre-tokenized rows)"""
+
+    @staticmethod
+    def _args(max_length=4, truncation_mode="keep_start"):
+        return __import__("types").SimpleNamespace(
+            dataset_num_proc=None,
+            max_length=max_length,
+            truncation_mode=truncation_mode,
+        )
+
+    @pytest.fixture
+    def dataset(self):
+        from datasets import Dataset
+
+        return Dataset.from_list(
+            [
+                {
+                    "input_ids": [1, 2, 3, 4, 5, 6],
+                    "assistant_masks": [0, 0, 0, 1, 1, 1],
+                },
+                {"input_ids": [7, 8], "assistant_masks": [0, 1]},
+            ]
+        )
+
+    def test_keep_start(self, dataset):
+        out = ui.truncate_like_trl(dataset, self._args(), "train")
+        assert out["input_ids"] == [[1, 2, 3, 4], [7, 8]]
+        assert out["assistant_masks"] == [[0, 0, 0, 1], [0, 1]]
+
+    def test_keep_end(self, dataset):
+        out = ui.truncate_like_trl(dataset, self._args(3, "keep_end"), "train")
+        assert out["input_ids"] == [[4, 5, 6], [7, 8]]
+        assert out["assistant_masks"] == [[1, 1, 1], [0, 1]]
+
+    def test_all_mask_columns_sliced_and_combined(self):
+        from datasets import Dataset
+
+        dataset = Dataset.from_list(
+            [
+                {
+                    "input_ids": [1, 2, 3, 4],
+                    "assistant_masks": [1, 1, 0, 0],
+                    "completion_mask": [0, 1, 1, 1],
+                }
+            ]
+        )
+        out = ui.truncate_like_trl(dataset, self._args(3), "train")
+        assert out["completion_mask"] == [[0, 1, 1]]
+        assert out["assistant_masks"] == [[1, 1, 0]]
+        # trained = all masks 1 -> position 1 only
+        assert len(out) == 1
+        dropped = ui.truncate_like_trl(dataset, self._args(1), "train")
+        assert len(dropped) == 0
+
+    def test_fully_masked_rows_dropped(self, dataset):
+        out = ui.truncate_like_trl(dataset, self._args(3), "train")
+        assert out["input_ids"] == [[7, 8]]
+
+    def test_no_mask_columns_keeps_rows(self):
+        from datasets import Dataset
+
+        dataset = Dataset.from_list([{"input_ids": [1, 2, 3, 4, 5]}])
+        out = ui.truncate_like_trl(dataset, self._args(2), "train")
+        assert out["input_ids"] == [[1, 2]]
+
+    def test_short_rows_unchanged(self, dataset):
+        out = ui.truncate_like_trl(dataset, self._args(10), "train")
+        assert out["input_ids"] == dataset["input_ids"]
+        assert out["assistant_masks"] == dataset["assistant_masks"]
+
+    def test_max_length_none_unchanged(self, dataset):
+        assert ui.truncate_like_trl(dataset, self._args(None), "train") is dataset
+
+    def test_unsupported_truncation_mode_raises(self, dataset):
+        with pytest.raises(ValueError, match="Unsupported truncation mode"):
+            ui.truncate_like_trl(dataset, self._args(4, "keep_middle"), "train")
+
+    @pytest.fixture
+    def tokenizer(self):
+        from transformers import AutoTokenizer
+
+        try:
+            return AutoTokenizer.from_pretrained(
+                "trl-internal-testing/tiny-Qwen3ForCausalLM", local_files_only=True
+            )
+        except OSError:
+            return AutoTokenizer.from_pretrained(
+                "trl-internal-testing/tiny-Qwen3ForCausalLM"
+            )
+
+    @pytest.mark.parametrize("truncation_mode", ["keep_start", "keep_end"])
+    def test_matches_trl_prepare_dataset(self, tokenizer, tmp_path, truncation_mode):
+        """Our tokenize + truncate equals TRL's own SFTTrainer._prepare_dataset on CPU."""
+        from datasets import Dataset
+        from trl import SFTTrainer
+
+        def conv(question, answer):
+            return [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": answer},
+            ]
+
+        dataset = Dataset.from_list(
+            [
+                {"messages": conv("Hi", "Hello there!")},
+                {"messages": conv("Tell me a long story " * 20, "Once upon a time.")},
+                {"messages": conv("Why?", "Because of many " * 15 + "reasons.")},
+                {"messages": conv("What is 1+1?", "2")},
+            ]
+        )
+        args = trl.SFTConfig(
+            output_dir=str(tmp_path),
+            bf16=False,
+            max_length=48,
+            truncation_mode=truncation_mode,
+            packing=False,
+            assistant_only_loss=True,
+            dataset_num_proc=None,
+            report_to="none",
+        )
+        fake_self = __import__("types").SimpleNamespace(
+            chat_template=None,
+            completion_only_loss=False,
+            args=args,
+            _is_vision_dataset=False,
+            _signature_columns=None,
+            _skip_prepare_dataset=False,
+            _tokenizer=tokenizer,
+        )
+        try:
+            expected = SFTTrainer._prepare_dataset(
+                fake_self, dataset, tokenizer, args, False, None, "train"
+            )
+        except Exception as exc:  # noqa: BLE001 - TRL internals vary by version; cross-check only
+            pytest.skip(f"cannot run TRL _prepare_dataset on CPU here: {exc!r}")
+
+        out = ui.tokenize_conversational_dataset(
+            dataset, tokenizer, args, None, "train"
+        )
+        out = ui.truncate_like_trl(out, args, "train")
+
+        assert len(out) == len(expected)
+        for row, exp in zip(out, expected):
+            assert row["input_ids"] == exp["input_ids"]
+            trained = [
+                t if m else -100
+                for t, m in zip(row["input_ids"], row["assistant_masks"])
+            ]
+            assert trained == exp["labels"]
+        assert max(len(r["input_ids"]) for r in out) <= 48
+
+
+class TestSFTTrainerUnslothPrepare:
+    """DnotitiaSFTTrainer._prepare_dataset: truncation depends on packing and model type."""
+
+    @pytest.fixture
+    def run(self, monkeypatch, tmp_path):
+        from datasets import Dataset
+
+        from dna_factory import dnotitia_sft_trainer as dst
+
+        tokenized = Dataset.from_list(
+            [{"input_ids": [1, 2, 3, 4, 5, 6], "assistant_masks": [0, 0, 1, 1, 1, 1]}]
+        )
+
+        def go(model_type, packing, max_length=4):
+            decision = __import__("types").SimpleNamespace(
+                active=True, model_type=model_type
+            )
+            monkeypatch.setattr(dst, "get_unsloth_decision", lambda: decision)
+            monkeypatch.setattr(
+                dst, "tokenize_conversational_dataset", lambda ds, *a: tokenized
+            )
+            seen = {}
+
+            def fake_super(self, dataset, *a):
+                seen["dataset"] = dataset
+                return dataset
+
+            monkeypatch.setattr(dst.SFTTrainer, "_prepare_dataset", fake_super)
+            args = trl.SFTConfig(
+                output_dir=str(tmp_path), bf16=False, max_length=max_length
+            )
+            src = Dataset.from_list([{"messages": []}])
+            trainer = object.__new__(dst.DnotitiaSFTTrainer)
+            trainer._prepare_dataset(src, None, args, packing, None, "train")
+            return seen["dataset"]["input_ids"][0]
+
+        return go
+
+    def test_unpacked_truncated(self, run):
+        assert run("qwen3", False) == [1, 2, 3, 4]
+
+    def test_packed_non_qwen3_5_untouched(self, run):
+        assert run("qwen3", True) == [1, 2, 3, 4, 5, 6]
+
+    def test_packed_qwen3_5_truncated(self, run):
+        assert run("qwen3_5", True) == [1, 2, 3, 4]
+
+    def test_max_length_none_untouched(self, run):
+        assert run("qwen3", False, max_length=None) == [1, 2, 3, 4, 5, 6]
+
+
 class TestScriptHooks:
     """The entry scripts' load_models hooks branch on ctx['use_unsloth'] (no GPU: loader is faked)."""
 

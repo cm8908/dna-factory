@@ -17,7 +17,7 @@ from dna_factory.unsloth_bootstrap import get_unsloth_decision
 _module_logger = logging.getLogger(__name__)
 
 # model_type values for which unsloth-managed vLLM (`fast_inference=True`) is allowed, each validated
-# with GRPO on this stack (vLLM 0.27.1). unsloth's docs still say Qwen3.5-architecture models need
+# with GRPO on this stack (vLLM 0.30.0). unsloth's docs still say Qwen3.5-architecture models need
 # fast_inference=False for RL; that predates vLLM's Qwen3.5 support and does not hold here. MoE types
 # are left out: unsloth always adapts the expert weights, and its engine refuses to serve LoRA on them
 # (vLLM's FusedMoEWithLoRA, vllm-project/vllm#41754), failing at the first rollout.
@@ -448,7 +448,7 @@ def tokenize_conversational_dataset(
     """
     Tokenize a not-yet-processed conversational language-modeling dataset the way TRL does.
 
-    Mirrors the language-modeling conversational case of trl 1.12 `SFTTrainer._prepare_dataset`
+    Mirrors the language-modeling conversational case of trl 1.15 `SFTTrainer._prepare_dataset`
     (ChatML conversion + `_tokenize` with the training chat template). It exists because unsloth's
     generated `UnslothSFTTrainer._prepare_dataset` replaces TRL's and has no `messages` handling (it
     raises "You must specify a formatting_func"), while it does accept datasets that already carry
@@ -458,7 +458,7 @@ def tokenize_conversational_dataset(
     ShareGPT-style `conversations`) are tokenized; every other shape (text field, prompt/completion,
     pre-tokenized) is returned untouched for unsloth's own handling. Original columns are kept, as in
     TRL; the trainer's column pruning drops them. Raises like TRL when `assistant_only_loss` is set
-    and an example has no assistant tokens.
+    and an example has no assistant tokens. Truncation is a separate step, `truncate_like_trl`.
     """
     import json
 
@@ -533,3 +533,60 @@ def tokenize_conversational_dataset(
             },
             **map_kwargs,
         )
+
+
+def truncate_like_trl(dataset, args, dataset_name):
+    """
+    Truncate a pre-tokenized dataset to `args.max_length` exactly as TRL's `SFTTrainer._prepare_dataset`.
+
+    unsloth's `_prepare_dataset` never truncates already-tokenized input. TRL slices `input_ids` and
+    the labels per `args.truncation_mode` (`keep_start` / `keep_end`, else ValueError), then drops rows left
+    with no trained token. TRL builds labels from the mask columns; here the same slice is applied to
+    `input_ids` and every mask column present (`assistant_masks`, `completion_mask`; the column set is kept
+    for unsloth), and a token counts as trained when all present masks are 1 there (no masks: all trained).
+    No-op when `max_length` is None.
+    """
+    if args.max_length is None:
+        return dataset
+
+    from datasets import Dataset
+    from trl.data_utils import get_dataset_column_names
+
+    if args.truncation_mode == "keep_start":
+        sl = slice(None, args.max_length)
+    elif args.truncation_mode == "keep_end":
+        sl = slice(-args.max_length, None)
+    else:
+        raise ValueError(
+            f"Unsupported truncation mode: {args.truncation_mode}, expected 'keep_start' or 'keep_end'"
+        )
+
+    is_dataset = isinstance(dataset, Dataset)  # IterableDataset: no num_proc / desc
+    map_kwargs = {"num_proc": args.dataset_num_proc} if is_dataset else {}
+    present = get_dataset_column_names(dataset)
+    columns = [
+        c for c in ("input_ids", "assistant_masks", "completion_mask") if c in present
+    ]
+    mask_columns = [c for c in columns if c != "input_ids"]
+
+    def truncate(example, sl, columns):
+        return {c: example[c][sl] for c in columns}
+
+    if is_dataset:
+        map_kwargs["desc"] = f"Truncating {dataset_name} dataset"
+    dataset = dataset.map(
+        truncate, fn_kwargs={"sl": sl, "columns": columns}, **map_kwargs
+    )
+
+    def has_trained_token(example, mask_columns):
+        if not mask_columns:
+            return len(example["input_ids"]) > 0
+        return any(all(bits) for bits in zip(*(example[c] for c in mask_columns)))
+
+    if is_dataset:
+        map_kwargs["desc"] = (
+            f"Dropping fully masked examples from {dataset_name} dataset"
+        )
+    return dataset.filter(
+        has_trained_token, fn_kwargs={"mask_columns": mask_columns}, **map_kwargs
+    )
