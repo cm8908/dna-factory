@@ -25,6 +25,10 @@ core pins through a `[tool.uv] override-dependencies` entry. As a result, `uv sy
 of the core pins, and `uv sync` without the extra is unaffected. This combination was validated on GPU with all
 four scripts. When you bump `datasets`, `transformers`, or `trl` in the core dependencies, bump the override too.
 
+Write the flag out in full (`--use_unsloth true`, or `use_unsloth: true` in the YAML). The bootstrap reads it
+before trl is imported and does not recognise abbreviated option names such as `--use_unsl`; the run then stops
+with an error because the argument parser and the bootstrap disagree.
+
 Run the script directly with `python`. Multi-process `accelerate launch` and DeepSpeed are rejected because
 unsloth is single-GPU in this repository.
 
@@ -40,9 +44,10 @@ The switch is selected from the checkpoint's `config.json` `model_type`:
 | `qwen3_5_moe` | Qwen3.5-35B-A3B / 122B-A10B / 397B-A17B, Qwen3.6-35B-A3B | HF generate (slower) |
 
 For any other model type, such as Qwen3.8-Flash-Next (`qwen4_exp`), the script logs a warning and uses the
-standard path; unsloth is not imported. MoE models use HF generate because unsloth's vLLM engine cannot serve
-LoRA on expert weights, which unsloth always adapts on MoE models
-([vllm-project/vllm#41754](https://github.com/vllm-project/vllm/issues/41754)).
+standard path; unsloth is not imported. If the model's `config.json` cannot be read (a mistyped path, or the Hub
+is unreachable with nothing cached), the run stops with an error instead of falling back. MoE models use HF
+generate because unsloth's vLLM engine cannot serve LoRA on expert weights, which unsloth always adapts on MoE
+models ([vllm-project/vllm#41754](https://github.com/vllm-project/vllm/issues/41754)).
 
 ## When it helps
 

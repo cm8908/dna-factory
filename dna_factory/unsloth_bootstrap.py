@@ -24,8 +24,10 @@ logger = logging.getLogger(__name__)
 # Extend only after validating a type end to end.
 UNSLOTH_MODEL_TYPES = frozenset({"qwen3", "qwen3_moe", "qwen3_5", "qwen3_5_moe"})
 
-_TRUE_VALUES = {"true", "1", "yes", "y", "on"}
-_FALSE_VALUES = {"false", "0", "no", "n", "off"}
+# Must match transformers.hf_argparser.string_to_bool exactly, so the bootstrap and the real parser
+# agree on every spelling (see resolve_use_unsloth, which raises when they disagree).
+_TRUE_VALUES = {"yes", "true", "t", "y", "1"}
+_FALSE_VALUES = {"no", "false", "f", "n", "0"}
 
 
 @dataclass(frozen=True)
@@ -48,7 +50,7 @@ def get_unsloth_decision() -> UnslothDecision | None:
 
 
 def _parse_bool(value, source: str) -> bool:
-    """Parse a bool from a YAML bool or a true/false/1/0/yes/no/y/n/on/off string."""
+    """Parse a bool from a YAML bool or a yes/true/t/y/1 or no/false/f/n/0 string (as HfArgumentParser)."""
     if isinstance(value, bool):
         return value
     text = str(value).strip().lower()
@@ -123,7 +125,12 @@ def resolve_bootstrap_args(cli_args: list[str], defaults_path: str) -> dict:
 def _read_model_type(
     model_name_or_path: str, revision: str | None
 ) -> tuple[str | None, str | None]:
-    """Return (model_type, error); error is a message when model_type could not be determined."""
+    """
+    Return (model_type, error).
+
+    error is a message only when config.json could not be read or parsed. A readable config.json
+    without `model_type` yields (None, None): the read worked, the model is just not identifiable.
+    """
     try:
         if os.path.isdir(model_name_or_path):
             config_path = Path(model_name_or_path) / "config.json"
@@ -137,8 +144,6 @@ def _read_model_type(
             model_type = json.load(f).get("model_type")
     except Exception as e:  # noqa: BLE001 - any failure just means the model type is unknown
         return None, f"{type(e).__name__}: {e}"
-    if model_type is None:
-        return None, "config.json has no model_type"
     return model_type, None
 
 
@@ -194,6 +199,8 @@ def maybe_import_unsloth(cli_args: list[str], defaults_path: str) -> UnslothDeci
 
     Must run before trl/transformers/peft are imported. If the model is unsupported unsloth is
     never imported, so the trainers stay unpatched and the run uses the standard TRL/HF path.
+    Raises RuntimeError (without importing unsloth) if the model's config.json cannot be read or
+    model_name_or_path is unset, since the support check is then impossible.
     """
     global _DECISION
     args = resolve_bootstrap_args(cli_args, defaults_path)
@@ -213,16 +220,18 @@ def maybe_import_unsloth(cli_args: list[str], defaults_path: str) -> UnslothDeci
         model_type, error = _read_model_type(model, args["model_revision"])
     else:
         model_type, error = None, "model_name_or_path is not set"
+    if error is not None:
+        # Falling back here would silently run something other than what use_unsloth asked for
+        raise RuntimeError(
+            f"use_unsloth=true needs the model's model_type, but it could not be determined for "
+            f"model {model!r}: {error}. Fix the model path / network access, or set "
+            "use_unsloth=false to use the standard TRL/HF path."
+        )
 
     if model_type not in UNSLOTH_MODEL_TYPES:
-        detail = (
-            f"model_type={model_type!r}"
-            if error is None
-            else f"model_type unknown ({error})"
-        )
         reason = (
-            f"unsloth skipped for model {model!r}: {detail} is not in the supported set "
-            f"{sorted(UNSLOTH_MODEL_TYPES)}; falling back to the standard TRL/HF path"
+            f"unsloth skipped for model {model!r}: model_type={model_type!r} is not in the supported "
+            f"set {sorted(UNSLOTH_MODEL_TYPES)}; falling back to the standard TRL/HF path"
         )
         logger.warning(reason)
         _DECISION = UnslothDecision(True, False, model_type, reason)

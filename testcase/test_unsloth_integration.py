@@ -424,6 +424,83 @@ class TestResolveUseUnsloth:
         )
         assert ui.resolve_use_unsloth(self._Args(True)) is True
 
+    @pytest.mark.parametrize("requested,parsed", [(False, True), (True, False)])
+    def test_disagreement_raises(self, monkeypatch, requested, parsed):
+        monkeypatch.setattr(
+            ub, "_DECISION", ub.UnslothDecision(requested, False, None, "x")
+        )
+        with pytest.raises(ValueError, match="--use_unsloth true\\|false") as exc_info:
+            ui.resolve_use_unsloth(self._Args(parsed))
+        assert f"bootstrap read use_unsloth={requested}" in str(exc_info.value)
+        assert f"parser read use_unsloth={parsed}" in str(exc_info.value)
+
+
+class TestBootstrapParserAgreement:
+    """The pre-import bootstrap and the real parser must read the same use_unsloth"""
+
+    @pytest.fixture
+    def run(self, tmp_path, monkeypatch):
+        from dna_factory.dnotitia_arguments import DnotitiaArguments
+
+        monkeypatch.setattr(ub, "_import_unsloth", lambda: None)
+        monkeypatch.setattr(ub, "_noexec_inductor_cache_dir", lambda: None)
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.delenv("ACCELERATE_USE_DEEPSPEED", raising=False)
+        model_dir = tmp_path / "qwen3"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text('{"model_type": "qwen3"}')
+        defaults = tmp_path / "defaults.yaml"
+        defaults.write_text(yaml.dump({"model_name_or_path": str(model_dir)}))
+
+        def _run(cli, yaml_value=None):
+            monkeypatch.setattr(ub, "_DECISION", None)
+            cli = list(cli)
+            if yaml_value is not None:
+                user = tmp_path / "user.yaml"
+                user.write_text(yaml.dump({"use_unsloth": yaml_value}))
+                cli = ["--config", str(user), *cli]
+            ub.maybe_import_unsloth(cli, str(defaults))
+            parser = trl.TrlParser((DnotitiaArguments,))
+            (dnotitia_args,) = parser.parse_args_and_config(cli)
+            return dnotitia_args
+
+        return _run
+
+    @pytest.mark.parametrize(
+        "cli,yaml_value,expected",
+        [
+            (["--use_unsloth", "true"], None, True),
+            (["--use_unsloth=true"], None, True),
+            (["--use-unsloth", "true"], None, True),
+            (["--use_unsloth"], None, True),
+            (["--use_unsloth", "t"], None, True),
+            (["--use_unsloth", "Y"], None, True),
+            (["--use_unsloth", "0"], None, False),
+            (["--use_unsloth", "f"], None, False),
+            (["--use_unsloth", "no"], None, False),
+            ([], None, False),
+            ([], True, True),
+            ([], False, False),
+            (["--use_unsloth", "false"], True, False),
+            (["--use_unsloth", "true"], False, True),
+        ],
+    )
+    def test_agree(self, run, cli, yaml_value, expected):
+        dnotitia_args = run(cli, yaml_value)
+        assert dnotitia_args.use_unsloth is expected
+        assert ub.get_unsloth_decision().requested is expected
+        assert ui.resolve_use_unsloth(dnotitia_args) is expected
+
+    @pytest.mark.parametrize("flag", ["--use_unsl", "--use_unslo"])
+    def test_abbreviated_flag_raises(self, run, flag):
+        dnotitia_args = run([flag, "true"])
+        assert dnotitia_args.use_unsloth is True  # argparse accepted the prefix
+        assert ub.get_unsloth_decision().requested is False
+        with pytest.raises(
+            ValueError, match="spell the flag out in full|Spell the flag"
+        ):
+            ui.resolve_use_unsloth(dnotitia_args)
+
 
 class FakeUnslothGRPOConfig(trl.GRPOConfig):
     """Mimics unsloth's patched config: rewrites values in __post_init__"""

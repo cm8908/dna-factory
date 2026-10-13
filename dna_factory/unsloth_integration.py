@@ -40,6 +40,9 @@ def resolve_use_unsloth(dnotitia_args) -> bool:
     Raises if use_unsloth is set but the bootstrap never ran: unsloth has to be imported before
     trl/transformers/peft, so a programmatic `main()` call cannot enable it after the fact.
     An unsupported model yields an inactive decision (the bootstrap already warned) -> vanilla path.
+    Also raises if the pre-import bootstrap and the argument parser read different use_unsloth values
+    (e.g. an abbreviated `--use_unsl true`, which argparse accepts but the bootstrap cannot see), since
+    that would silently run the other path.
     """
     decision = get_unsloth_decision()
     if decision is None:
@@ -49,6 +52,14 @@ def resolve_use_unsloth(dnotitia_args) -> bool:
                 "Run the script as `python <script>.py ...` rather than calling main() directly."
             )
         return False
+    if decision.requested != bool(dnotitia_args.use_unsloth):
+        raise ValueError(
+            f"use_unsloth disagreement: the pre-import bootstrap read use_unsloth={decision.requested} "
+            f"from the command line/YAML, but the argument parser read "
+            f"use_unsloth={bool(dnotitia_args.use_unsloth)}. Spell the flag out in full as "
+            "`--use_unsloth true|false` (or set it in the YAML); abbreviated option names are not "
+            "recognised before trl is imported."
+        )
     return decision.active
 
 

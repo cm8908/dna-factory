@@ -138,12 +138,12 @@ class TestUseUnslothBoolForms:
             ("1", True),
             ("YES", True),
             ("y", True),
-            ("On", True),
+            ("T", True),
             ("false", False),
             ("0", False),
             ("no", False),
             ("N", False),
-            ("OFF", False),
+            ("f", False),
         ],
     )
     def test_value_forms(self, defaults, value, expected):
@@ -151,6 +151,24 @@ class TestUseUnslothBoolForms:
             ub.resolve_bootstrap_args(["--use_unsloth", value], defaults)["use_unsloth"]
             is expected
         )
+
+    @pytest.mark.parametrize("value", ["on", "OFF", "On"])
+    def test_on_off_rejected_like_hf_parser(self, defaults, value):
+        with pytest.raises(ValueError, match="use_unsloth"):
+            ub.resolve_bootstrap_args(["--use_unsloth", value], defaults)
+
+    def test_accepted_values_match_hf_string_to_bool(self):
+        from transformers.hf_argparser import string_to_bool
+
+        for value in ub._TRUE_VALUES | ub._FALSE_VALUES:
+            assert ub._parse_bool(value.upper(), "t") is string_to_bool(value)
+        for value in ("on", "off", "maybe", "2"):
+            with pytest.raises(ValueError):
+                ub._parse_bool(value, "t")
+
+    def test_yaml_bool_value(self, tmp_path):
+        defaults = write_yaml(tmp_path / "defaults.yaml", {"use_unsloth": True})
+        assert ub.resolve_bootstrap_args([], defaults)["use_unsloth"] is True
 
     def test_yaml_string_value(self, tmp_path):
         defaults = write_yaml(tmp_path / "defaults.yaml", {"use_unsloth": "yes"})
@@ -182,6 +200,16 @@ class TestReadModelType:
         bad.mkdir()
         (bad / "config.json").write_text("{not json")
         assert ub.read_model_type(str(bad)) is None
+
+    def test_readable_config_without_model_type_is_not_an_error(self, tmp_path):
+        d = tmp_path / "no_type"
+        d.mkdir()
+        (d / "config.json").write_text("{}")
+        assert ub._read_model_type(str(d), None) == (None, None)
+
+    def test_read_failure_reports_error(self, tmp_path):
+        model_type, error = ub._read_model_type(str(tmp_path / "missing"), None)
+        assert model_type is None and error
 
 
 class TestMaybeImportUnsloth:
@@ -231,16 +259,68 @@ class TestMaybeImportUnsloth:
             for r in caplog.records
         )
 
-    def test_unknown_model_type_falls_back(self, tmp_path, defaults, importer, caplog):
+    def test_readable_config_without_model_type_falls_back(
+        self, tmp_path, defaults, importer, caplog
+    ):
+        model_dir = tmp_path / "no_type"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text("{}")
         with caplog.at_level(logging.WARNING, logger=ub.__name__):
             decision = ub.maybe_import_unsloth(
-                ["--use_unsloth", "--model_name_or_path", str(tmp_path / "missing")],
-                defaults,
+                ["--use_unsloth", "--model_name_or_path", str(model_dir)], defaults
             )
-        assert decision.active is False
+        assert (decision.requested, decision.active) == (True, False)
         assert decision.model_type is None
         assert importer == []
-        assert caplog.records
+        assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+    def test_nonexistent_local_path_raises(self, tmp_path, defaults, importer):
+        missing = str(tmp_path / "missing")
+        with pytest.raises(RuntimeError, match="use_unsloth=false") as exc_info:
+            ub.maybe_import_unsloth(
+                ["--use_unsloth", "--model_name_or_path", missing], defaults
+            )
+        assert missing in str(exc_info.value)
+        assert importer == []
+        assert ub.get_unsloth_decision() is None
+
+    def test_hub_download_failure_raises(self, defaults, importer, monkeypatch):
+        import huggingface_hub
+
+        def boom(*a, **k):
+            raise OSError("hub unreachable")
+
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", boom)
+        with pytest.raises(RuntimeError, match="hub unreachable") as exc_info:
+            ub.maybe_import_unsloth(
+                ["--use_unsloth", "--model_name_or_path", "org/not-a-local-dir"],
+                defaults,
+            )
+        assert "org/not-a-local-dir" in str(exc_info.value)
+        assert importer == []
+
+    def test_invalid_config_json_raises(self, tmp_path, defaults, importer):
+        bad = tmp_path / "bad"
+        bad.mkdir()
+        (bad / "config.json").write_text("{not json")
+        with pytest.raises(RuntimeError, match="JSONDecodeError"):
+            ub.maybe_import_unsloth(
+                ["--use_unsloth", "--model_name_or_path", str(bad)], defaults
+            )
+        assert importer == []
+
+    def test_model_not_set_raises(self, defaults, importer):
+        with pytest.raises(RuntimeError, match="model_name_or_path is not set"):
+            ub.maybe_import_unsloth(["--use_unsloth"], defaults)
+        assert importer == []
+
+    def test_unreadable_config_ignored_when_not_requested(
+        self, tmp_path, defaults, importer
+    ):
+        decision = ub.maybe_import_unsloth(
+            ["--model_name_or_path", str(tmp_path / "missing")], defaults
+        )
+        assert decision.active is False
 
     def test_world_size_raises(self, tmp_path, defaults, importer, monkeypatch):
         monkeypatch.setenv("WORLD_SIZE", "2")
