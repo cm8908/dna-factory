@@ -263,6 +263,50 @@ def build_peft_kwargs(
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def _peft_doubles_fused_gate_up(model_type) -> bool:
+    """
+    Whether PEFT's v4->v5 MoE config conversion gives the fused gate_up_proj rank/alpha x2 for this type.
+
+    PEFT maps the model type to a base pattern (`_MODEL_TO_CONVERSION_PATTERN`) and doubles r/alpha when all
+    of that pattern's `_MOE_FUSED_TARGETS` (gate_proj + up_proj) are targeted. With PEFT 0.21 this is
+    qwen3_moe (-> qwen2_moe) but not qwen3_5_moe. Private names, imported lazily; hard-coded fallback.
+    """
+    try:
+        from peft.utils.transformers_weight_conversion import (
+            _MODEL_TO_CONVERSION_PATTERN,
+            _MOE_FUSED_TARGETS,
+        )
+
+        base = _MODEL_TO_CONVERSION_PATTERN.get(model_type)
+        return len(_MOE_FUSED_TARGETS.get(base, {}).get("gate_up_proj", ())) > 1
+    except (
+        ImportError,
+        AttributeError,
+    ):  # peft too old / no transformers v5 / names moved
+        return model_type == "qwen3_moe"
+
+
+def _moe_gate_up_rank_differs(model_args, model_type) -> bool:
+    """True when PEFT would double the fused expert gate_up rank while unsloth adapts it at plain r."""
+    if model_type not in _MOE_MODEL_TYPES or not _peft_doubles_fused_gate_up(
+        model_type
+    ):
+        return False
+    # explicit target_parameters: PEFT keeps them as given and unsloth does not auto-add; no difference
+    if model_args.lora_target_parameters:
+        return False
+    targets = model_args.lora_target_modules
+    # unset: PEFT has no default for these types (the standard path needs explicit targets), nothing to compare
+    if not targets:
+        return False
+    if isinstance(targets, str):
+        # "all-linear" is expanded by PEFT to include gate_proj/up_proj; unsloth adds the experts at plain r
+        return targets.lower() == "all-linear" or (
+            "gate_proj" in targets and "up_proj" in targets
+        )
+    return "gate_proj" in targets and "up_proj" in targets
+
+
 def validate_unsloth_args(
     model_args, training_args, *, model_type, fast_inference, logger=None
 ):
@@ -303,6 +347,14 @@ def validate_unsloth_args(
             f"lora_dropout={model_args.lora_dropout} is not supported for {model_type} with "
             "use_unsloth=true: unsloth adapts the MoE expert parameters through PEFT's ParamWrapper, "
             "which rejects dropout. Set lora_dropout=0.0."
+        )
+    if model_args.use_peft and _moe_gate_up_rank_differs(model_args, model_type):
+        logger.warning(
+            f"{model_type}: with gate_proj and up_proj targeted, PEFT (use_unsloth=false) gives the fused "
+            "expert gate_up_proj adapter rank 2*lora_r and alpha 2*lora_alpha, whereas unsloth adapts it "
+            "at lora_r / lora_alpha (same alpha/r scale, half the rank). For identical adapters on both paths, "
+            "target attention only (lora_target_modules: [q_proj, k_proj, v_proj, o_proj]) and set "
+            "lora_target_parameters: [mlp.experts.gate_up_proj, mlp.experts.down_proj]."
         )
     if model_args.load_in_4bit and model_type in _QWEN3_5_MODEL_TYPES:
         logger.warning(

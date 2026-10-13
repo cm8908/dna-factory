@@ -9,6 +9,7 @@ import importlib
 import logging
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import torch
@@ -308,6 +309,106 @@ class TestValidateUnslothArgs:
     def test_moe_zero_dropout_ok(self, model_args, sft_args, model_type):
         model_args.use_peft, model_args.lora_dropout = True, 0.0
         self._validate(model_args, sft_args, model_type=model_type)
+
+    @staticmethod
+    def _gate_up_warnings(caplog):
+        return [r for r in caplog.records if "gate_up_proj" in r.message]
+
+    def _warns(self, model_args, sft_args, caplog, model_type="qwen3_moe", **fields):
+        model_args.use_peft = fields.pop("use_peft", True)
+        model_args.lora_dropout = 0.0
+        for key, value in fields.items():
+            setattr(model_args, key, value)
+        with caplog.at_level(logging.WARNING, logger=ui.__name__):
+            self._validate(model_args, sft_args, model_type=model_type)
+        return bool(self._gate_up_warnings(caplog))
+
+    ALL_TARGETS: ClassVar[list[str]] = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
+
+    def test_moe_gate_up_rank_warns(self, model_args, sft_args, caplog):
+        assert self._warns(
+            model_args, sft_args, caplog, lora_target_modules=self.ALL_TARGETS
+        )
+        assert "lora_target_parameters" in self._gate_up_warnings(caplog)[0].message
+
+    def test_moe_gate_up_rank_warns_all_linear(self, model_args, sft_args, caplog):
+        assert self._warns(
+            model_args, sft_args, caplog, lora_target_modules="all-linear"
+        )
+
+    def test_moe_attention_only_does_not_warn(self, model_args, sft_args, caplog):
+        targets = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        assert not self._warns(
+            model_args, sft_args, caplog, lora_target_modules=targets
+        )
+
+    def test_dense_qwen3_does_not_warn(self, model_args, sft_args, caplog):
+        assert not self._warns(
+            model_args,
+            sft_args,
+            caplog,
+            model_type="qwen3",
+            lora_target_modules=self.ALL_TARGETS,
+        )
+
+    def test_moe_without_peft_does_not_warn(self, model_args, sft_args, caplog):
+        assert not self._warns(
+            model_args,
+            sft_args,
+            caplog,
+            use_peft=False,
+            lora_target_modules=self.ALL_TARGETS,
+        )
+
+    def test_moe_explicit_target_parameters_does_not_warn(
+        self, model_args, sft_args, caplog
+    ):
+        assert not self._warns(
+            model_args,
+            sft_args,
+            caplog,
+            lora_target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            lora_target_parameters=[
+                "mlp.experts.gate_up_proj",
+                "mlp.experts.down_proj",
+            ],
+        )
+
+    def test_moe_gate_up_fallback_when_peft_names_missing(
+        self, model_args, sft_args, caplog, monkeypatch
+    ):
+        monkeypatch.setitem(
+            sys.modules, "peft.utils.transformers_weight_conversion", None
+        )
+        assert self._warns(
+            model_args, sft_args, caplog, lora_target_modules=self.ALL_TARGETS
+        )
+        caplog.clear()
+        assert not self._warns(
+            model_args,
+            sft_args,
+            caplog,
+            model_type="qwen3_5_moe",
+            lora_target_modules=self.ALL_TARGETS,
+        )
+
+    def test_qwen3_5_moe_does_not_warn(self, model_args, sft_args, caplog):
+        # PEFT has no v4->v5 conversion pattern for qwen3_5_moe, so no rank doubling there
+        assert not self._warns(
+            model_args,
+            sft_args,
+            caplog,
+            model_type="qwen3_5_moe",
+            lora_target_modules=self.ALL_TARGETS,
+        )
 
     def test_vllm_server_rejected(self, model_args, grpo_args):
         grpo_args.vllm_mode = "server"

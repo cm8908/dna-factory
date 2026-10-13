@@ -98,6 +98,12 @@ When `lora_target_modules` is unset, PEFT's per-architecture default is used, as
 `v_proj` for Qwen3). Architectures without a PEFT default (Qwen3 MoE and Qwen3.5) use unsloth's default: every
 linear layer in the language model, plus the MoE expert parameters. The script's tokenizer is used.
 
+On `qwen3_moe` with both `gate_proj` and `up_proj` targeted (or `all-linear`), PEFT's checkpoint conversion gives the
+fused expert `gate_up_proj` adapter rank `2*lora_r` and alpha `2*lora_alpha`; unsloth uses `lora_r` / `lora_alpha`
+(same alpha/r scale, half the rank), and a warning is printed. For identical adapters on both paths, use
+`lora_target_modules: [q_proj, k_proj, v_proj, o_proj]` with
+`lora_target_parameters: [mlp.experts.gate_up_proj, mlp.experts.down_proj]`.
+
 **Hyperparameters.** unsloth's patched TRL config classes rewrite some values during construction. For example,
 GRPO with `loss_type: dapo` gets `epsilon_high: 0.28` and `top_k: -1`. The scripts re-parse the arguments with
 TRL's own classes, restore every rewritten value, and print the changes:
