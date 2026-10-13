@@ -19,14 +19,14 @@ _module_logger = logging.getLogger(__name__)
 # model_type values for which unsloth-managed vLLM (`fast_inference=True`) is allowed, each validated
 # with GRPO on this stack (vLLM 0.30.0). unsloth's docs still say Qwen3.5-architecture models need
 # fast_inference=False for RL; that predates vLLM's Qwen3.5 support and does not hold here. MoE types
-# are left out: unsloth always adapts the expert weights, and its engine refuses to serve LoRA on them
-# (vLLM's FusedMoEWithLoRA, vllm-project/vllm#41754), failing at the first rollout.
+# are left out: unsloth adapts the expert weights whenever the MLP projections are targeted, and its engine
+# refuses to serve LoRA on them (vLLM's FusedMoEWithLoRA, vllm-project/vllm#41754), failing at the first rollout.
 FAST_INFERENCE_MODEL_TYPES = frozenset({"qwen3", "qwen3_5"})
 
 # Qwen3.5-architecture model types: composite (vision + text) configs.
 _QWEN3_5_MODEL_TYPES = frozenset({"qwen3_5", "qwen3_5_moe"})
 
-# MoE model types: unsloth always wraps the expert parameters with PEFT's ParamWrapper for LoRA.
+# MoE model types: unsloth adapts targeted expert parameters through PEFT's ParamWrapper for LoRA.
 _MOE_MODEL_TYPES = frozenset({"qwen3_moe", "qwen3_5_moe"})
 
 # unsloth silently downgrades its "unsloth" gradient checkpointing to the standard one below this.

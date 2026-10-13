@@ -2,8 +2,12 @@
 
 This guide covers `use_unsloth: true`. The option loads models through [unsloth](https://github.com/unslothai/unsloth)'s
 `FastModel` and uses unsloth's patched versions of the TRL trainers in all four scripts (`sft.py`, `dpo.py`,
-`grpo.py`, and `distill.py`). It changes the backend only: hyperparameters, prepared training data, and saved
-checkpoints match the `use_unsloth: false` path.
+`grpo.py`, and `distill.py`). It is a backend switch: the run follows the same configuration as with
+`use_unsloth: false` (hyperparameters, model, which parameters train, LoRA rank and alpha, `max_length`, loss type),
+and a setting unsloth cannot honour stops the run with an error or prints a warning instead of being changed
+silently. How the work is computed does differ (kernels, packing groups, unsloth's own GRPO/distillation loss
+code), so results match the standard path in what is trained, not bit for bit. See
+[Known differences](#known-differences).
 
 ## Install and run
 
@@ -46,8 +50,8 @@ The switch is selected from the checkpoint's `config.json` `model_type`:
 For any other model type, such as Qwen3.8-Flash-Next (`qwen4_exp`), the script logs a warning and uses the
 standard path; unsloth is not imported. If the model's `config.json` cannot be read (a mistyped path, or the Hub
 is unreachable with nothing cached), the run stops with an error instead of falling back. MoE models use HF
-generate because unsloth's vLLM engine cannot serve LoRA on expert weights, which unsloth always adapts on MoE
-models ([vllm-project/vllm#41754](https://github.com/vllm-project/vllm/issues/41754)).
+generate because unsloth's vLLM engine cannot serve LoRA on expert weights
+([vllm-project/vllm#41754](https://github.com/vllm-project/vllm/issues/41754)).
 
 ## When it helps
 
@@ -131,6 +135,25 @@ Packed rows are chunked to `max_length` by packing itself. Two differences remai
 **Checkpoints.** Saved checkpoints are ordinary PEFT adapters (LoRA) or Hugging Face checkpoints (full
 fine-tuning) and load without unsloth. Qwen3.5-architecture checkpoints retain their
 `*ForConditionalGeneration` architecture, as on the standard path.
+
+## Known differences
+
+The configuration is honoured on both paths; these are the ways the computation differs:
+
+- **Numerics.** unsloth's fused kernels and gradient checkpointing replace the standard ones (Liger is off), so
+  losses and weights track the standard path closely but not bit for bit.
+- **SFT packing.** Packed rows are grouped differently (0.25% fewer on Capybara, same trained tokens), and
+  Qwen3.5-architecture models are not packed at all (more steps per epoch). Data parity was checked for
+  conversational `messages` datasets, the only format `sft.py` accepts.
+- **GRPO and distillation loss.** The loss is computed by unsloth's own implementation of TRL's loss types
+  (`unsloth_zoo`), not by TRL's code. It targets the same objective but was not compared numerically with TRL's.
+- **Generation.** unsloth's vLLM engine decodes with the LoRA adapter applied instead of merging it into the
+  weights. This is slower (see [When it helps](#when-it-helps)); rollouts were checked to match HF generate on the
+  live model.
+- **`qwen3_moe` gate/up adapter rank.** Half of PEFT's when `gate_proj` and `up_proj` are targeted; a warning is
+  printed (see **Model and LoRA** above).
+- **DPO reference with LoRA.** The policy with its adapter disabled instead of a second full model: the same
+  weights, less memory.
 
 ## Not supported with unsloth
 

@@ -93,7 +93,7 @@ $ python sft.py \
 
 ## unsloth (single GPU)
 
-`use_unsloth: true` loads the model through [unsloth](https://github.com/unslothai/unsloth)'s `FastModel` and its patched TRL trainers, for all four scripts. It is an optional extra and single-GPU only (no DeepSpeed, no AsyncGRPO). Hyperparameters, the prepared data and the saved checkpoints stay the same as without it. Supported `model_type`s are `qwen3`, `qwen3_moe`, `qwen3_5` and `qwen3_5_moe`; other models fall back to the standard path with a warning (an unreadable model `config.json` stops the run with an error instead). Write the flag out in full, as `--use_unsloth true`:
+`use_unsloth: true` loads the model through [unsloth](https://github.com/unslothai/unsloth)'s `FastModel` and its patched TRL trainers, for all four scripts. It is an optional extra and single-GPU only (no DeepSpeed, no AsyncGRPO). It follows the same configuration as without it: a setting unsloth cannot honour stops the run or prints a warning instead of being changed silently, and where the computation differs (kernels, packing groups, unsloth's own GRPO/distillation loss code) is listed in the guide. Supported `model_type`s are `qwen3`, `qwen3_moe`, `qwen3_5` and `qwen3_5_moe`; other models fall back to the standard path with a warning (an unreadable model `config.json` stops the run with an error instead). Write the flag out in full, as `--use_unsloth true`:
 
 ```bash
 $ uv sync --extra unsloth
