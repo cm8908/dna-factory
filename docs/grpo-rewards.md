@@ -1,6 +1,6 @@
 # GRPO Reward Functions
 
-Wiring and contract for reward functions in `grpo.py`. Concrete instances live in `dna_factory/rewards/my_rewards.py` and are referenced as `- dna_factory.rewards.<name>`. The factories stay in `generative.py` (judge) and `verifiable.py` (string-match); `my_rewards.py` is the file you edit.
+Wiring and contract for reward functions in `grpo.py`. Concrete instances live in `dna_factory/rewards/my_rewards.py` and are referenced as `- dna_factory.rewards.<name>`. The factories stay in `generative.py` (judge), `verifiable.py` (string-match) and `reasoning.py` (thinking-model answer checks); `my_rewards.py` is the file you edit.
 
 ## Taxonomy
 
@@ -17,8 +17,10 @@ reward_funcs: entry is one of two forms —
        │     boxed_match_reward
        ├─ accuracy      ← crash-safe wrapper around TRL accuracy_reward
        │     safe_accuracy_reward
+       ├─ reasoning     ← make_strict_accuracy_reward / make_answer_format_penalty / make_ngram_loop_penalty (framework: reasoning.py)
+       │     strict_accuracy_reward · answer_format_penalty · ngram_loop_penalty
        └─ shaping       ← trl.rewards.get_* (TRL's own factories)
-             soft_overlong_penalty · cosine_scaled_reward · repetition_penalty_reward
+             soft_overlong_penalty · soft_overlong_penalty_8k · cosine_scaled_reward · repetition_penalty_reward
 
 reward_model_name_or_path (outside reward_funcs — loaded internally by GRPOTrainer as a sequence-classification model; scores every sample, no label routing)
 ```
@@ -39,6 +41,10 @@ Every dotted-path entry shares the same reason it cannot be a bare name: `resolv
 | `cosine_scaled_reward` | shaping | correctness × length cosine; `solution` + `math_verify`; length bound 4096 |
 | `repetition_penalty_reward` | shaping | 3-gram repetition penalty |
 | `soft_overlong_penalty` | shaping | soft length punishment (`max_completion_len=4096`) |
+| `strict_accuracy_reward` | reasoning | 0/1 on a finished, closed answer section; every distinct box must verify; `solution` + `math_verify`; length bound 8192 |
+| `answer_format_penalty` | reasoning | ≤ 0: unclosed reasoning, extra `\boxed` / "Final Answer" blocks; length bound 8192 |
+| `ngram_loop_penalty` | reasoning | ≤ 0: repeated token 20-gram share past 0.1 |
+| `soft_overlong_penalty_8k` | shaping | soft length punishment (`max_completion_len=8192`) |
 
 Shaping instances hard-code a length bound of **4096**. Rebuild them if the recipe's `max_completion_length` changes (the GRPO default is `16384` and is not auto-synced). Bare TRL names (`accuracy_reward`, `reasoning_accuracy_reward`, `think_format_reward`) are resolved in `grpo.py`, not in this package.
 
@@ -240,6 +246,28 @@ Trades `accuracy_reward`'s semantic equivalence (`math_verify` treats `0.5` and 
 ## Accuracy: `safe_accuracy_reward`
 
 The default GRPO config uses `dna_factory.rewards.safe_accuracy_reward` instead of the bare `accuracy_reward` name. Same call contract and same scores as TRL's `accuracy_reward` (`solution` column + `math_verify`), but crash-safe: upstream computes every reward correctly, then stringifies the parsed sympy expressions for logging (`str(answer_parsed)`), which raises on rare model outputs (e.g. a `cot` at its singularity blows up inside sympy/mpmath with `ZeroDivisionError`) and would kill the whole training run. The wrapper first tries the upstream call on the full batch; if that raises, it retries sample-by-sample so only the poisoned samples score `None` (excluded from this reward, like an unparseable gold) while healthy samples keep their real scores.
+
+## Thinking-model math: `reasoning.py`
+
+A 0/1 accuracy reward on a thinking model (completion = `reasoning</think>answer`) leaks in ways a GRPO run will find. In one Qwen3-4B-Thinking-2507 run on `competition_math_grpo`:
+
+- `accuracy_reward` parses the **whole** completion, so a rollout cut at `max_completion_length` mid-reasoning still scored 1 whenever the gold number appeared in it. `mask_truncated_completions` keeps that rollout out of the loss, but its reward still raises its group's mean.
+- A group whose 8 rollouts are all right (or all wrong) has advantage 0, so nothing distinguishes one clean `\boxed{}` from the same block repeated up to the cap, or a finished wrong answer from a loop that hits the cap.
+
+`make_strict_accuracy_reward(max_completion_len, max_distinct_answers=4, require_units=False)` grades only the answer section after the single `</think>` of a completion shorter than `max_completion_len`, and pays only when **every** distinct `\boxed{}` there verifies (boxing each candidate in turn scores 0; repeating the same box is graded once). `require_units` also demands a gold `%`/`°` in the box. It is off because a prompt that asks for "a number" makes the bare value the instructed answer, and `inspect_evals/math` strips both marks anyway. It logs the graded answer, or the reason for a 0, as the `<name>_answer` completions-table column.
+
+`make_answer_format_penalty(max_completion_len, per_extra_block=0.25)` and `make_ngram_loop_penalty(ngram_size=20, tolerance=0.1, saturation=0.5)` are non-positive, so a clean correct answer still scores exactly 1. They split the groups that accuracy leaves tied. The 20-gram size was calibrated on that run. Ordinary reasoning stays at or below 0.15 repeated share, but its 3-gram share has a median of about 0.4, which is why TRL's 3-gram `repetition_penalty_reward` taxes it.
+
+```yaml
+reward_funcs:
+  - dna_factory.rewards.strict_accuracy_reward
+  - dna_factory.rewards.answer_format_penalty
+  - dna_factory.rewards.ngram_loop_penalty
+  - dna_factory.rewards.soft_overlong_penalty_8k
+reward_weights: [1.0, 0.5, 0.5, 0.5]
+```
+
+The shipped instances are built for `max_completion_length: 8192`. Rebuild them if the recipe's length changes.
 
 ## Shaping rewards (`trl.rewards` factories)
 

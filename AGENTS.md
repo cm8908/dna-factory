@@ -45,7 +45,8 @@ with a MoE model risks ZeRO-3 param-trace errors.
   no `ref_model`).
 - `dna_factory/` — custom trainers and utils (config merging, output-dir naming, colored
   logging). `rewards/` holds the GRPO reward framework (`generative.py` = judge,
-  `verifiable.py` = string-match) and the concrete instances (`my_rewards.py`).
+  `verifiable.py` = string-match, `reasoning.py` = thinking-model answer checks) and the
+  concrete instances (`my_rewards.py`).
 - `configs/` — `_defaults-{SFT,DPO,GRPO,Distill}.yaml` (base, **do not edit**) merged with
   model-specific overrides in `configs/{SFT,DPO,GRPO,Distill}/`.
 

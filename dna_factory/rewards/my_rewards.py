@@ -17,6 +17,11 @@ from trl.rewards import (
 )
 
 from .generative import _warn_once, make_judge_reward
+from .reasoning import (
+    make_answer_format_penalty,
+    make_ngram_loop_penalty,
+    make_strict_accuracy_reward,
+)
 from .verifiable import make_string_match_reward
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -133,4 +138,36 @@ soft_overlong_penalty = get_soft_overlong_punishment(
 soft_overlong_penalty.__doc__ = (
     "Soft length punishment (max_completion_len=4096). "
     "YAML: dna_factory.rewards.soft_overlong_penalty"
+)
+
+
+# --- Thinking-model math rewards (reasoning.py), built for max_completion_length 8192 ---
+# Used together by sangpark/grpo.yaml. The length bound is not auto-synced: rebuild all three
+# length-aware instances if the recipe's max_completion_length changes.
+strict_accuracy_reward = make_strict_accuracy_reward(max_completion_len=8192)
+strict_accuracy_reward.__doc__ = (
+    "0/1 accuracy on a finished, closed answer section; every distinct box must verify; "
+    "`solution` + math_verify. YAML: dna_factory.rewards.strict_accuracy_reward"
+)
+
+answer_format_penalty = make_answer_format_penalty(max_completion_len=8192)
+answer_format_penalty.__doc__ = (
+    "Unclosed reasoning -1; -0.25 per extra \\boxed / Final Answer block. "
+    "YAML: dna_factory.rewards.answer_format_penalty"
+)
+
+ngram_loop_penalty = make_ngram_loop_penalty()
+ngram_loop_penalty.__doc__ = (
+    "Repeated 20-gram share past 0.1, down to -1 at 0.5. "
+    "YAML: dna_factory.rewards.ngram_loop_penalty"
+)
+
+# soft_punish_cache = 8192 // 5, same ratio as soft_overlong_penalty above.
+soft_overlong_penalty_8k = get_soft_overlong_punishment(
+    max_completion_len=8192, soft_punish_cache=1638
+)
+soft_overlong_penalty_8k.__name__ = "soft_overlong_penalty_8k"
+soft_overlong_penalty_8k.__doc__ = (
+    "Soft length punishment (max_completion_len=8192). "
+    "YAML: dna_factory.rewards.soft_overlong_penalty_8k"
 )
