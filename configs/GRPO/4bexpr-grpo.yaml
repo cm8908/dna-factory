@@ -1,0 +1,60 @@
+model_name_or_path: dnotitia/Qwen3-4B-Thinking-2507
+# model_name_or_path: dnotitia/Qwen3-1.7B
+
+run_name: grpo-4b-thinking-2507-strict-rewards
+# run_name: grpo-1.7b-zero3
+
+dataset_name: dnotitia/competition_math_grpo
+dataset_config: decontamination
+
+# 0/1 accuracy plus three non-positive shaping terms (sum_then_normalize, scale_rewards none).
+# A clean, correct, single-closure answer scores exactly 1.0, so the advantage scale of the
+# 0/1 reward is unchanged; the penalties only split groups the 0/1 reward leaves tied.
+#   strict_accuracy_reward   only a finished, closed answer section counts, and every distinct
+#                            \boxed there must be right (no truncation leak, no box hedging)
+#   answer_format_penalty    -0.25 per extra \boxed / "Final Answer" block; -1 if </think> missing
+#   ngram_loop_penalty       verbatim 20-gram loops
+#   soft_overlong_penalty_8k last 1638 tokens before the cap (DAPO), -1 when cut off
+# All length-aware instances are built for 8192; rebuild them in my_rewards.py if that changes.
+reward_funcs:
+  - dna_factory.rewards.strict_accuracy_reward
+  - dna_factory.rewards.answer_format_penalty
+  - dna_factory.rewards.ngram_loop_penalty
+  - dna_factory.rewards.soft_overlong_penalty_8k
+#  - dna_factory.rewards.safe_accuracy_reward
+reward_weights: [1.0, 0.5, 0.5, 0.5]
+
+# 7497 prompts / 8 per step = 937 steps per epoch. eval/math peaked at 0.93 (step 469-763) and
+# fell to 0.63 at step 938, the first step of epoch 2 -- replaying solved prompts only drifts.
+num_train_epochs: 10
+max_steps: -1
+
+max_completion_length: 8192  # matches eval_max_tokens and the reward instances above
+
+# KL to the starting model keeps the answer style from drifting into padding/loops once the
+# 0/1 reward saturates (beta 0 has nothing pulling it back). Loads a reference model.
+# beta: 0.04
+
+# grpo normalizes each sequence by its own length, so a long wrong completion's per-token
+# penalty shrinks -- the bias that let the failing groups grow. dapo is token-level.
+# loss_type: dapo
+# epsilon_high: 0.28  # DAPO clip-higher, against entropy collapse into one stock answer
+
+# Corrects vLLM-vs-trainer logprob mismatch (TRL default); off lets long rollouts drift.
+# vllm_importance_sampling_correction: true
+
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 16
+
+learning_rate: 2e-6
+
+periodic_save_seconds: 1h
+eval_on_checkpoint: true
+eval_tasks:
+  - inspect_evals/math
+#  - inspect_evals/aime2025
+#  - inspect_evals/gpqa_diamond
+#  - evals/kmmlu_pro.py
+#  - evals/kmmlu_redux.py
+
+eval_devices: "4,5" 

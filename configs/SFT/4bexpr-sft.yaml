@@ -1,0 +1,79 @@
+model_name_or_path: dnotitia/Qwen3-4B-Base-NoThink
+
+run_name: sft
+
+max_length: 32000
+packing: true
+
+assistant_only_loss: true
+num_train_epochs: 6
+
+gradient_accumulation_steps: 8
+per_device_train_batch_size: 2
+
+report_to:
+  - wandb
+
+periodic_save_seconds: 80m
+eval_on_checkpoint: true
+
+datasets:
+  - path: dnotitia/magpie-qwen3-4b-instruct-2507
+    name: all
+    split: train
+    columns:
+      - messages
+  - path: dnotitia/magpie-glm5.1
+    name: all
+    split: train
+    columns:
+      - messages
+  # Per-subset breakdown (uncomment to set per-subset weight/fraction;
+  # `name: ko` / `name: en` select one language):
+  # # ko
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-gemma2-pro-200k-filtered-ko
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-phi3-pro-300k-filtered-ko
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-air-mt-300k-v0.1-ko
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-pro-mt-300k-v0.1-ko
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: oig-small-chip2-ko
+  #   split: train
+  #   columns:
+  #     - messages
+  # # en
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-gemma2-pro-200k-filtered
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-llama-3.1-pro-mt-300k-filtered
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: magpie-pro-mt-300k-v0.1
+  #   split: train
+  #   columns:
+  #     - messages
+  # - path: dnotitia/magpie-qwen3-4b-instruct-2507
+  #   name: oig-small-chip2
+  #   split: train
+  #   columns:
+  #     - messages
