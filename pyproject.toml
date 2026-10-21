@@ -8,29 +8,29 @@ dependencies = [
     "accelerate==1.15.0",
     "apache-tvm-ffi==0.1.11",
     "datasets==5.1.0",
-    "deepspeed==0.19.7",
+    "deepspeed==0.19.8",
     "inspect-ai==0.3.277",
     "inspect-evals==0.23.0",
     "kernels==0.17.2",
-    "liger-kernel==0.8.4",
+    "liger-kernel==0.8.5",
     "math-verify==0.9.0",
     "peft==0.21.2",
     "pytest==9.1.1",
     "requests==2.34.2",
-    "ruff==0.16.10",
+    "ruff==0.17.1",
     "tilelang==0.1.12",
     "torch==2.13.0",
-    "transformers==5.19.0",
-    "trl==1.15.0",
-    "vllm==0.30.0",
-    "wandb==0.30.0",
+    "transformers==5.20.2",
+    "trl==1.16.0",
+    "vllm==0.31.0",
+    "wandb==0.31.0",
 ]
 
 [project.optional-dependencies]
 # Opt-in unsloth backend (`use_unsloth: true`); install with `uv sync --extra unsloth`. See docs/unsloth.md.
 unsloth = [
-    "unsloth==2026.10.3",
-    "unsloth-zoo==2026.10.3",
+    "unsloth==2026.10.7",
+    "unsloth-zoo==2026.10.7",
 ]
 
 [tool.uv]
@@ -40,8 +40,8 @@ package = false
 # (testcase/test_dependency_pins.py checks this).
 override-dependencies = [
     "datasets==5.1.0",
-    "transformers==5.19.0",
-    "trl==1.15.0",
+    "transformers==5.20.2",
+    "trl==1.16.0",
 ]
 
 [tool.ruff]
