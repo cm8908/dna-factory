@@ -24,7 +24,7 @@ $ accelerate launch --config_file accelerate_configs/zero3.yaml \
 
 Notes:
 - The effective generation batch size (`per_device_train_batch_size` × number of processes × `steps_per_generation`) must be divisible by `num_generations`.
-- A reward returning `None` excludes that sample instead of scoring it `0.0`, so `All reward functions returned None` warnings are normal. `max_completion_length` is `16384` in our defaults because a truncated completion never reaches an answer, which flattens the whole group to `grad_norm: 0`. Both are covered in [grpo-rewards.md](grpo-rewards.md#troubleshooting-a-flat-run).
+- A reward returning `None` excludes that sample instead of scoring it `0.0`, so `All reward functions returned None` warnings are normal. `max_completion_length` is `8192` in our defaults because a truncated completion never reaches an answer, which flattens the whole group to `grad_norm: 0`. Both are covered in [grpo-rewards.md](grpo-rewards.md#troubleshooting-a-flat-run).
 
 Reward functions (built-in `trl.rewards`, LLM-as-judge, and string-match) are documented in [grpo-rewards.md](grpo-rewards.md).
 
