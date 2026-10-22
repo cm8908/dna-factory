@@ -17,7 +17,7 @@ unsloth is an optional extra, pinned to `unsloth`/`unsloth-zoo` 2026.10.3:
 $ uv sync --extra unsloth
 
 $ python sft.py --config configs/SFT/qwen3-0.6B-sft-unsloth.yaml
-$ python grpo.py --config configs/GRPO/qwen3-0.6B-grpo-unsloth.yaml
+$ python grpo.py --config grpo-unsloth.yaml  # saved from the example GRPO config below
 
 # Or switch it on for any config
 $ python dpo.py --config configs/DPO/qwen3-0.6B-dpo.yaml --use_unsloth true --use_peft true --lora_dropout 0.0
@@ -35,6 +35,33 @@ with an error because the argument parser and the bootstrap disagree.
 
 Run the script directly with `python`. Multi-process `accelerate launch` and DeepSpeed are rejected because
 unsloth is single-GPU in this repository.
+
+### Example GRPO config
+
+Like the other [GRPO configuration variants](grpo.md#configuration-variants), the GRPO example is written out
+here instead of being shipped as a file. Save this as `grpo-unsloth.yaml`:
+
+```yaml
+model_name_or_path: dnotitia/Qwen3-0.6B
+
+# With `use_vllm: true` (the default), unsloth owns the colocated vLLM engine and shares the LoRA weights with
+# it; `vllm_gpu_memory_utilization` sizes that engine. The engine is LoRA-only: full fine-tuning falls back to
+# HF generate.
+use_unsloth: true
+
+use_peft: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0  # unsloth's fast LoRA path needs 0 (TRL's default is 0.05)
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+num_generations: 8
+per_device_train_batch_size: 8
+
+# Short for math, as in qwen3-0.6B-grpo.yaml: many completions get truncated
+max_completion_length: 4096
+vllm_max_model_length: 8192
+```
 
 ## Supported models
 

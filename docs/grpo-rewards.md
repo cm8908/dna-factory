@@ -171,7 +171,7 @@ reward_funcs:
 
 A `label: persona` row is scored only by `persona_judge` (which reads its `expected_output`); `ccp_judge` returns `None` for it, and vice-versa — so each sample gets exactly one reward. The rule: pair a reference-guided reward with the dataset that actually carries its reference column (`expected_output` here; `solution` for `accuracy_reward` / `boxed_match_reward`), and a direct judge with a dataset that needs none. A verifiable reward left without `only_label` (e.g. `boxed_match_reward`) self-selects the other way: it returns `None` on any row whose `solution` is missing, so it scores only the rows that have one.
 
-Example config: `configs/GRPO/qwen3-0.6B-rlvr-mix3.yaml`.
+A complete config for this pattern on public datasets: [Per-label judges on a mixture](grpo.md#per-label-judges-on-a-mixture).
 
 ## The judge family (`generative.py` → instances in `my_rewards.py`)
 
@@ -216,10 +216,10 @@ Judge health is logged via `log_metric` under `<name>/score_mean`, `<name>/parse
 | Instance | Config | Notes |
 |---|---|---|
 | `judge_reward` | direct rubric, no reference | `name="judge_reward"`, no `only_label`/`reference_column` |
-| `judge_reward_with_reference` | reference-guided | `reference_column="solution"`; used by `configs/GRPO/qwen3-0.6B-judge.yaml` |
-| `persona_judge` | `only_label="persona"`, `reference_column="expected_output"`, rubric `example_judge_rubric_with_reference.md` | used by `configs/GRPO/qwen3-0.6B-rlvr-mix3.yaml` |
-| `ccp_judge` | `only_label="ccp"`, direct rubric `example_judge_rubric_safety.md` | used by `configs/GRPO/qwen3-0.6B-rlvr-mix3.yaml` |
-| `rlvr_judge` | `only_label="rlvr"`, `reference_column="expected_output"`, rubric `example_judge_rubric_reasoning.md` | used by `configs/GRPO/qwen3-0.6B-rlvr-mix3.yaml` |
+| `judge_reward_with_reference` | reference-guided | `reference_column="solution"`; used by [LLM judge with a reference](grpo.md#llm-judge-with-a-reference) |
+| `persona_judge` | `only_label="persona"`, `reference_column="expected_output"`, rubric `example_judge_rubric_with_reference.md` | used by [Per-label judges on a mixture](grpo.md#per-label-judges-on-a-mixture) |
+| `ccp_judge` | `only_label="ccp"`, direct rubric `example_judge_rubric_safety.md` | used by [Per-label judges on a mixture](grpo.md#per-label-judges-on-a-mixture) |
+| `rlvr_judge` | `only_label="rlvr"`, `reference_column="expected_output"`, rubric `example_judge_rubric_reasoning.md` | used by [Per-label judges on a mixture](grpo.md#per-label-judges-on-a-mixture) |
 
 ## Verifiable rewards (`verifiable.py`)
 
@@ -298,7 +298,7 @@ reward_funcs:
   - dna_factory.rewards.soft_overlong_penalty
 ```
 
-A length-derived argument (`max_completion_len`/`max_len`) is **not** auto-synced from `training_args`. The shipped instances are built for `4096`; the GRPO default `max_completion_length` is `16384`. If a recipe overrides that length, rebuild the matching instance by hand — `soft_overlong_penalty` is used by `configs/GRPO/qwen3-0.6B-rlvr-composed.yaml`.
+A length-derived argument (`max_completion_len`/`max_len`) is **not** auto-synced from `training_args`. The shipped instances are built for `4096`; the GRPO default `max_completion_length` is `16384`. If a recipe overrides that length, rebuild the matching instance by hand. The [Weighted rewards](grpo.md#weighted-rewards) example uses `soft_overlong_penalty` and sets `max_completion_length: 4096` to match it.
 
 ## Composing multiple rewards: `reward_weights`
 
@@ -310,7 +310,7 @@ reward_funcs:
 reward_weights: [1.0, 0.2, 1.0]
 ```
 
-Same order as `reward_funcs`. Each reward is evaluated per-sample, multiplied by its weight, and — under TRL's default `multi_objective_aggregation: sum_then_normalize` — summed into one scalar per sample *before* the group-relative advantage / `scale_rewards` step. Each component is still logged separately and un-weighted as `rewards/<func_name>/mean`, so individual components remain observable even though only their weighted sum drives the gradient. See `configs/GRPO/qwen3-0.6B-rlvr-composed.yaml` for a worked example.
+Same order as `reward_funcs`. Each reward is evaluated per-sample, multiplied by its weight, and — under TRL's default `multi_objective_aggregation: sum_then_normalize` — summed into one scalar per sample *before* the group-relative advantage / `scale_rewards` step. Each component is still logged separately and un-weighted as `rewards/<func_name>/mean`, so individual components remain observable even though only their weighted sum drives the gradient. See [Weighted rewards](grpo.md#weighted-rewards) for a worked example.
 
 ## Writing your own
 
