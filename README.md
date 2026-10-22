@@ -126,6 +126,10 @@ $ accelerate launch \
 
 See [multi-nodes.md](docs/multi-nodes.md) for the master/worker launch commands.
 
+## Documentation
+
+Guides for each training method and feature are listed in [docs/README.md](docs/README.md).
+
 # Acknowledgments
 
 This project is made possible thanks to:

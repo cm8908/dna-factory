@@ -51,6 +51,7 @@ with a MoE model risks ZeRO-3 param-trace errors.
   model-specific overrides in `configs/{SFT,DPO,GRPO,Distill}/`. GRPO variants (no vLLM,
   server mode, DAPO, Dr. GRPO, weighted rewards, judges, unsloth) are documented as
   snippets in docs/grpo.md, not shipped as separate config files.
+- `docs/` — per-feature guides, indexed in docs/README.md.
 
 ## Gotchas
 
