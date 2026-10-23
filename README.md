@@ -98,13 +98,12 @@ $ python sft.py \
 ```bash
 $ uv sync --extra unsloth
 $ python sft.py --config configs/SFT/qwen3-0.6B-sft-unsloth.yaml
-$ python grpo.py --config configs/GRPO/qwen3-0.6B-grpo-unsloth.yaml
 
 # Any script, any config
 $ python dpo.py --use_unsloth true --use_peft true --lora_dropout 0.0
 ```
 
-Full guide, including when it helps and what it changes: [docs/unsloth.md](docs/unsloth.md).
+Full guide, including an example GRPO config, when it helps and what it changes: [docs/unsloth.md](docs/unsloth.md).
 
 ## Multi-GPUs
 
@@ -126,6 +125,10 @@ $ accelerate launch \
 ## Multi-Nodes
 
 See [multi-nodes.md](docs/multi-nodes.md) for the master/worker launch commands.
+
+## Documentation
+
+Guides for each training method and feature are listed in [docs/README.md](docs/README.md).
 
 # Acknowledgments
 

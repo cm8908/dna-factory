@@ -39,7 +39,7 @@ judge_reward_with_reference.__doc__ = (
     "YAML: dna_factory.rewards.judge_reward_with_reference"
 )
 
-# --- Per-label judges for configs/GRPO/qwen3-0.6B-rlvr*.yaml; each pins its own rubric_file ---
+# --- Per-label judges for the mixture example in docs/grpo.md; each pins its own rubric_file ---
 persona_judge = make_judge_reward(
     str(_PROMPTS_DIR / "example_judge_rubric_with_reference.md"),
     only_label="persona",
@@ -130,8 +130,8 @@ repetition_penalty_reward.__doc__ = (
     "3-gram repetition penalty. YAML: dna_factory.rewards.repetition_penalty_reward"
 )
 
-# soft_punish_cache = max_completion_length // 5 (4096 // 5). Used by
-# configs/GRPO/qwen3-0.6B-rlvr-composed.yaml. Length isn't auto-synced to the recipe.
+# soft_punish_cache = max_completion_length // 5 (4096 // 5). Used by the weighted-rewards
+# example in docs/grpo.md. Length isn't auto-synced to the recipe.
 soft_overlong_penalty = get_soft_overlong_punishment(
     max_completion_len=4096, soft_punish_cache=819
 )

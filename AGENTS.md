@@ -48,7 +48,10 @@ with a MoE model risks ZeRO-3 param-trace errors.
   `verifiable.py` = string-match, `reasoning.py` = thinking-model answer checks) and the
   concrete instances (`my_rewards.py`).
 - `configs/` — `_defaults-{SFT,DPO,GRPO,Distill}.yaml` (base, **do not edit**) merged with
-  model-specific overrides in `configs/{SFT,DPO,GRPO,Distill}/`.
+  model-specific overrides in `configs/{SFT,DPO,GRPO,Distill}/`. GRPO variants (no vLLM,
+  server mode, DAPO, Dr. GRPO, weighted rewards, judges, unsloth) are documented as
+  snippets in docs/grpo.md, not shipped as separate config files.
+- `docs/` — per-feature guides, indexed in docs/README.md.
 
 ## Gotchas
 
